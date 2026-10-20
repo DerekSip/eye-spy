@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Eye Spy — Web Flasher &amp; Dashboard</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root{
+      --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;
+      --accent:#58a6ff;--text:#e6edf3;--muted:#8b949e;
+      --green:#3fb950;--yellow:#d29922;--red:#f85149;--blue:#58a6ff;--ble:#bc8cff;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;min-height:100vh}
+
+    /* ── Top nav ── */
+    .top-nav{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.25rem;height:48px;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:.95rem;color:var(--text);text-decoration:none}
+    .nav-brand span{font-size:1.3rem}
+    .nav-tabs{display:flex;gap:0}
+    .tab-btn{padding:.5rem 1rem;border:none;background:none;color:var(--muted);cursor:pointer;font-size:.85rem;font-weight:500;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;height:48px}
+    .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+    .nav-links{display:flex;align-items:center;gap:.75rem}
+    .nav-links a{color:var(--muted);font-size:.82rem;text-decoration:none;display:flex;align-items:center;gap:.3rem;transition:color .15s}
+    .nav-links a:hover{color:var(--text)}
+
+    /* ── Flash pane ── */
+    #pane-flash{display:none;flex-direction:column;align-items:center;padding:2.5rem 1rem 5rem;min-height:calc(100vh - 48px)}
+    #pane-flash.active{display:flex}
+
+    .flasher-wrap{width:100%;max-width:640px}
+
+    /* hero */
+    .hero{text-align:center;margin-bottom:2.5rem}
+    .hero-icon{font-size:3.5rem;line-height:1;margin-bottom:.5rem}
+    .hero h1{font-size:2rem;font-weight:800;color:var(--accent);letter-spacing:-.02em}
+    .hero p{color:var(--muted);margin-top:.4rem;font-size:.95rem}
+
+    /* wizard steps */
+    .wizard-step{display:flex;gap:1rem;margin-bottom:1rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.4rem 1.5rem;transition:border-color .2s}
+    .wizard-step.active-step{border-color:var(--accent)}
+    .step-num{flex-shrink:0;width:2.2rem;height:2.2rem;border-radius:50%;background:var(--accent);color:#0d1117;font-weight:800;font-size:.9rem;display:grid;place-items:center;margin-top:.15rem}
+    .step-num.done{background:var(--green)}
+    .step-body{flex:1;min-width:0}
+    .step-title{font-weight:700;font-size:1rem;margin-bottom:.5rem;color:var(--text)}
+    .step-desc{font-size:.88rem;color:var(--muted);line-height:1.6;margin-bottom:.75rem}
+
+    /* ── Device configuration (ADR-0001) ── */
+    .cfg-master{display:flex;align-items:center;gap:.5rem;font-size:.92rem;
+                font-weight:600;margin:.6rem 0 1rem;cursor:pointer}
+    .cfg-section{margin:1rem 0;padding:.85rem 1rem;border:1px solid var(--border);
+                 border-radius:10px;background:rgba(255,255,255,.02)}
+    .cfg-h{font-size:.82rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+           color:var(--muted);margin-bottom:.7rem}
+    .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.6rem}
+    .cfg-item{display:flex;gap:.55rem;align-items:flex-start;font-size:.84rem;line-height:1.45;
+              cursor:pointer;padding:.4rem .5rem;border-radius:8px}
+    .cfg-item:hover{background:rgba(255,255,255,.04)}
+    .cfg-item input{margin-top:.15rem;flex:0 0 auto}
+    .cfg-sub{color:var(--muted);font-size:.78rem}
+    .cfg-note{font-size:.78rem;color:var(--muted);line-height:1.5;margin:.4rem 0}
+    .cfg-row{display:flex;justify-content:space-between;align-items:center;gap:1rem;
+             font-size:.85rem;margin:.55rem 0;flex-wrap:wrap}
+    .cfg-row select{background:var(--bg,#0d1117);color:inherit;border:1px solid var(--border);
+                    border-radius:8px;padding:.35rem .5rem;font-size:.82rem;max-width:22rem}
+
+    /* board grid */
+    .board-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+    @media(max-width:480px){.board-grid{grid-template-columns:1fr}}
+    .board-btn{border:1px solid var(--border);border-radius:8px;padding:.85rem 1rem;cursor:pointer;background:transparent;color:var(--text);text-align:left;width:100%;transition:border-color .15s,background .15s}
+    .board-btn:hover{border-color:var(--accent);background:rgba(88,166,255,.05)}
+    .board-btn.selected{border-color:var(--accent);background:rgba(88,166,255,.1)}
+    .board-btn.selected .board-name::before{content:"✓ ";color:var(--green)}
+    .board-name{font-weight:600;font-size:.88rem;display:block;margin-bottom:.15rem}
+    .board-chip{display:inline-block;font-size:.65rem;font-weight:700;padding:1px 6px;border-radius:3px;background:rgba(110,118,129,.2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem}
+    .board-desc{font-size:.76rem;color:var(--muted);line-height:1.4}
+    .board-experimental{border-style:dashed;opacity:.8}
+
+    /* flash action */
+    .flash-action{display:flex;flex-direction:column;align-items:center;gap:.75rem}
+    esp-web-install-button::part(button){
+      background:var(--accent);color:#0d1117;border:none;border-radius:8px;
+      padding:.7rem 2rem;font-size:1rem;font-weight:700;cursor:pointer;
+      letter-spacing:.01em;transition:opacity .15s;
+    }
+    esp-web-install-button::part(button):hover{opacity:.85}
+    .btn-serial{
+      display:inline-flex;align-items:center;gap:.4rem;
+      background:var(--surface2);border:1px solid var(--border);color:var(--text);
+      border-radius:8px;padding:.6rem 1.4rem;font-size:.88rem;font-weight:600;
+      cursor:pointer;transition:border-color .15s,background .15s;
+    }
+    .btn-serial:hover{border-color:var(--green);background:rgba(63,185,80,.07)}
+    .flash-note{font-size:.78rem;color:var(--muted);text-align:center}
+
+    /* info cards */
+    .info-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.25rem 1.5rem;margin-bottom:.9rem}
+    .info-card h3{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.75rem}
+    .badge-row{display:flex;flex-wrap:wrap;gap:.4rem}
+    .badge{display:inline-block;font-size:.7rem;font-weight:700;padding:2px 9px;border-radius:4px;background:rgba(88,166,255,.13);color:var(--accent);text-transform:uppercase;letter-spacing:.06em}
+    code{background:rgba(110,118,129,.18);border-radius:4px;padding:1px 6px;font-size:.82em;font-family:"SF Mono",Consolas,monospace;word-break:break-all}
+    a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+    .resource-links{display:flex;flex-wrap:wrap;gap:.5rem}
+    .resource-links a{display:inline-flex;align-items:center;gap:.3rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.35rem .8rem;font-size:.82rem;color:var(--text);text-decoration:none;transition:border-color .15s}
+    .resource-links a:hover{border-color:var(--accent);color:var(--accent)}
+
+    /* ── Dashboard pane — fixed overlay ── */
+    #pane-dash{display:none;flex-direction:row;position:fixed;top:48px;left:0;right:0;bottom:0;z-index:50}
+    #pane-dash.active{display:flex}
+    .dash-sidebar{width:290px;min-width:230px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .dash-main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+    .d-panel{padding:12px 14px;border-bottom:1px solid var(--border)}
+    .d-panel h3{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+    .d-btn{padding:6px 10px;border-radius:6px;border:none;cursor:pointer;font-size:.8rem;font-weight:600}
+    .d-btn-p{background:var(--accent);color:#0d1117}.d-btn-d{background:var(--red);color:#fff}
+    .d-btn-sm{padding:4px 9px;border-radius:5px;border:none;cursor:pointer;font-size:.74rem;font-weight:600;color:#fff}
+    .conn-row{display:flex;gap:6px;align-items:center}
+    /* Score */
+    .score-box{text-align:center;padding:16px 14px 10px}
+    .score-num{font-size:3.2rem;font-weight:800;line-height:1;transition:color .3s;color:var(--green)}
+    .score-badge{display:inline-block;margin-top:5px;padding:2px 14px;border-radius:12px;font-size:.78rem;font-weight:700}
+    .b-CLEAR{background:rgba(63,185,80,.15);color:var(--green)}
+    .b-CAUTION{background:rgba(210,153,34,.15);color:var(--yellow)}
+    .b-ALERT{background:rgba(248,81,73,.2);color:var(--red)}
+    .phase-row{display:flex;justify-content:center;gap:6px;margin-top:7px}
+    .phase-chip{padding:2px 9px;border-radius:10px;font-size:.68rem;font-weight:600;background:var(--border);color:var(--muted)}
+    .phase-chip.active{background:rgba(88,166,255,.15);color:var(--accent)}
+    .stat-box{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .stat-item{background:#0d1117;border-radius:6px;padding:7px 10px}
+    .stat-v{font-size:1.3rem;font-weight:800;color:var(--accent);line-height:1}
+    .stat-k{font-size:.66rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+    .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+    .dot-on{background:var(--green)}.dot-off{background:var(--muted)}
+    .det-feed{flex:1;overflow-y:auto}
+    .det-item{padding:7px 14px;border-bottom:1px solid rgba(48,54,61,.4);font-size:.78rem}
+    .det-item .d-row1{display:flex;justify-content:space-between;gap:6px;align-items:center}
+    .det-badge{font-size:.65rem;font-weight:700;padding:1px 5px;border-radius:3px}
+    .t-ble{background:rgba(188,140,255,.15);color:var(--ble)}
+    .t-wifi{background:rgba(88,166,255,.15);color:var(--accent)}
+    .t-score{background:rgba(63,185,80,.15);color:var(--green)}
+    .det-method{font-weight:600;color:var(--text)}
+    .det-meta{color:var(--muted);margin-top:1px}
+    .has-gps::after{content:"📍";margin-left:3px;font-size:.65rem}
+    .dash-top{display:grid;grid-template-columns:1fr 1fr;height:50%;border-bottom:1px solid var(--border)}
+    #dash-map{height:100%;width:100%}
+    .map-wrap{position:relative;overflow:hidden}
+    .map-btns{position:absolute;top:6px;right:6px;z-index:999;display:flex;gap:5px}
+    .term-wrap{background:#0a0e13;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .term-hdr{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;border-bottom:1px solid var(--border);background:var(--surface)}
+    .term-hdr span{font-size:.7rem;font-weight:600;text-transform:uppercase;color:var(--muted)}
+    #dash-term{flex:1;overflow-y:auto;padding:6px 8px;font-family:"SF Mono",Consolas,monospace;font-size:.7rem;line-height:1.5;color:#7ee787}
+    .dash-bottom{flex:1;overflow:hidden;display:flex;flex-direction:column}
+    .tbl-hdr{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
+    .tbl-hdr span{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+    .exp-row{display:flex;gap:5px}
+    .tbl-scroll{flex:1;overflow-y:auto}
+    table{width:100%;border-collapse:collapse;font-size:.76rem}
+    thead th{position:sticky;top:0;background:var(--surface);padding:6px 10px;text-align:left;font-size:.67rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap}
+    tbody tr{border-bottom:1px solid rgba(48,54,61,.35)}
+    tbody tr:hover{background:rgba(88,166,255,.04)}
+    tbody td{padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media(max-width:800px){.dash-sidebar{width:220px}.dash-top{grid-template-columns:1fr;height:auto}#dash-map{height:200px}}
+    @media(max-width:600px){.dash-sidebar{display:none}.nav-links{display:none}}
+  </style>
+</head>
+<body>
+
+<!-- ── Top navigation ── -->
+<nav class="top-nav">
+  <a class="nav-brand" href="#">
+    <span>👁</span> Eye Spy
+  </a>
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('flash')">⚡ Flash</button>
+    <button class="tab-btn" onclick="switchTab('dash')">🔍 Dashboard</button>
+  </div>
+  <div class="nav-links">
+    <a href="https://github.com/simeononsecurity/eye-spy" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <a href="https://github.com/simeononsecurity/eye-spy/blob/main/README.md" target="_blank">Docs</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════ FLASH PANE ═══════════════════════════ -->
+<div id="pane-flash">
+<div class="flasher-wrap">
+
+  <div class="hero">
+    <div class="hero-icon">👁</div>
+    <h1>Eye Spy</h1>
+    <p>Surveillance Camera &amp; Tracker Detector &mdash; Browser-based firmware installer</p>
+  </div>
+
+  <!-- Step 1: Connect -->
+  <div class="wizard-step active-step" id="step1">
+    <div class="step-num" id="sn1">1</div>
+    <div class="step-body">
+      <div class="step-title">Connect Your Device</div>
+      <div class="step-desc">
+        Plug your ESP32 board into this computer via USB. Use <strong>Chrome</strong> or <strong>Edge</strong> on desktop — Web Serial is not supported in Firefox or Safari.<br>
+        No drivers are needed on modern macOS / Windows 11.
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Select board -->
+  <div class="wizard-step" id="step2">
+    <div class="step-num" id="sn2">2</div>
+    <div class="step-body">
+      <div class="step-title">Select Firmware</div>
+      <div class="step-desc">Choose the variant that matches your hardware.</div>
+      <div class="board-grid">
+
+        <button class="board-btn selected" onclick="selectFW(this,'manifest-esp32dev.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">Generic ESP32 DevKit</span>
+          <span class="board-desc">WROOM / WROVER &mdash; most common boards &amp; breakouts</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-atom-lite.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">M5Stack ATOM Lite</span>
+          <span class="board-desc">Compact ATOM with RGB LED &amp; Grove port</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-atom-echo.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">M5Stack ATOM Echo</span>
+          <span class="board-desc">ATOM with speaker &amp; microphone</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-atom-voice.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">M5Stack ATOM Voice</span>
+          <span class="board-desc">ATOM Voice with I2S audio</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-m5stack-basic-ble.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">M5Stack Basic Core v2.7</span>
+          <span class="board-desc">2.0&quot; IPS 320×240 display · speaker · 3 buttons · 16 MB flash</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-m5stack-core2-aws-ble.json')">
+          <span class="board-chip">ESP32 · 8 MB PSRAM</span>
+          <span class="board-name">M5Stack Core2 For AWS</span>
+          <span class="board-desc">2.0&quot; capacitive touch IPS · I²S speaker · ATECC608 crypto</span>
+        </button>
+
+        <button class="board-btn" onclick="selectFW(this,'manifest-m5stickc-plus-se-ble.json')">
+          <span class="board-chip">ESP32</span>
+          <span class="board-name">M5StickC Plus SE</span>
+          <span class="board-desc">1.14&quot; ST7789v2 135×240 · passive buzzer · 2 buttons · orange case</span>
+        </button>
+
+        <button class="board-btn board-experimental" onclick="selectFW(this,'manifest-lilygo-t-dongle-c5.json')">
+          <span class="board-chip">ESP32-C5 · Experimental</span>
+          <span class="board-name">LILYGO T-Dongle C5</span>
+          <span class="board-desc">USB-dongle with TFT display &amp; RGB LED</span>
+        </button>
+
+        <button class="board-btn board-experimental" onclick="selectFW(this,'manifest-atom-lite-beacon.json')">
+          <span class="board-chip">ESP32 · Test Tool</span>
+          <span class="board-name">🧪 Beacon Tester (M5Atom Lite)</span>
+          <span class="board-desc">Broadcasts fake surveillance-device BLE/WiFi signals so you can verify a SEPARATE real Eye Spy detector at home. Not a detector itself &mdash; do not flash to a device you intend to use as a real detector.</span>
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Step 3: Configuration (optional — everything defaults to standard behaviour) -->
+  <div class="wizard-step" id="step3">
+    <div class="step-num" id="sn3">3</div>
+    <div class="step-body">
+      <div class="step-title">Configuration <span style="font-weight:400;opacity:.7">(optional)</span></div>
+      <div class="step-desc">
+        Everything below is the standard behaviour — leave it alone and nothing changes.
+        Anything you change is written to the device along with the firmware, and only the
+        options this board can actually honour are shown.
+      </div>
+
+      <label class="cfg-master">
+        <input type="checkbox" id="cfg-custom"> Customise what this device detects and how it alerts
+      </label>
+
+      <div id="cfg-body" style="display:none">
+        <div class="cfg-section">
+          <div class="cfg-h">Detections to watch for</div>
+          <div class="cfg-grid" id="cfg-engines"></div>
+          <div class="cfg-note" id="cfg-engines-note"></div>
+        </div>
+
+        <div class="cfg-section">
+          <div class="cfg-h">Alerts this device can make</div>
+          <div class="cfg-grid" id="cfg-outputs"></div>
+          <div class="cfg-note">
+            Turning an output off only silences <em>this device</em> — detections are still
+            recorded and still sent to the dashboard.
+          </div>
+        </div>
+
+        <div class="cfg-section">
+          <div class="cfg-h">Sensitivity</div>
+          <div class="cfg-row">
+            <label for="cfg-minscore">How sure before it alerts</label>
+            <select id="cfg-minscore"></select>
+          </div>
+          <div class="cfg-note">
+            "Near-certain only" makes the device quieter. It can never make it alert on
+            hardware that merely shares a manufacturer with camera equipment.
+          </div>
+          <div class="cfg-row">
+            <label for="cfg-rssi">Ignore Bluetooth devices weaker than</label>
+            <select id="cfg-rssi"></select>
+          </div>
+          <div class="cfg-row">
+            <label for="cfg-tracker">Trackers must be present for</label>
+            <select id="cfg-tracker"></select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Flash -->
+  <div class="wizard-step" id="step4">
+    <div class="step-num" id="sn4">4</div>
+    <div class="step-body">
+      <div class="step-title">Flash Firmware</div>
+      <div class="step-desc">Click <strong>Install</strong>, select your device's serial port, and wait ~60 s for flashing to complete.</div>
+      <div class="flash-action">
+        <p class="cfg-note" id="cfg-parts-note"></p>
+        <esp-web-install-button id="install-btn" manifest="manifest-esp32dev.json"></esp-web-install-button>
+        <button class="btn-serial" onclick="openSerial()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 3.5A1.5 1.5 0 017.5 2h1A1.5 1.5 0 0110 3.5v1A1.5 1.5 0 018.5 6v1H11a.5.5 0 01.5.5v1a.5.5 0 01-1 0V8H8.5v.5a.5.5 0 01-1 0V8H5.5v.5a.5.5 0 01-1 0v-1A.5.5 0 015 7h2.5V6A1.5 1.5 0 016 4.5v-1z"/><path d="M3.5 6.5A.5.5 0 014 7h1v1H4a.5.5 0 010-1zm8 0a.5.5 0 01.5.5v1h-1V7a.5.5 0 01.5-.5z"/></svg>
+          Open Serial Monitor
+        </button>
+        <p class="flash-note">After flashing, open the <strong>Dashboard</strong> tab above to see live suspicion score &amp; detections.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- What it detects -->
+  <div class="info-card">
+    <h3>What It Detects</h3>
+    <div class="badge-row" style="margin-bottom:.75rem">
+      <span class="badge">BLE Scan</span>
+      <span class="badge">WiFi Probe</span>
+      <span class="badge">OUI Fingerprint</span>
+      <span class="badge">SSID Heuristics</span>
+      <span class="badge">MAC Correlation</span>
+    </div>
+    <p style="font-size:.86rem;color:var(--muted);line-height:1.7">
+      Builds a cumulative <em>suspicion score</em> to detect Axon body-cams, Flock Safety cameras, AirTags, drones, and other surveillance devices.<br>
+      Output: <code>[eyespy] +5 (Axon-cam)  score=10</code> &nbsp;·&nbsp; <code>[eyespy] status  score=10  ALERT  phase=BLE  tracked=3  events=12  heap=214880 min_heap=201336</code>
+    </p>
+  </div>
+
+  <!-- Resources -->
+  <div class="info-card">
+    <h3>Resources</h3>
+    <div class="resource-links">
+      <a href="https://github.com/simeononsecurity/eye-spy" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <a href="https://github.com/simeononsecurity/eye-spy/blob/main/README.md" target="_blank">📖 README</a>
+      <a href="https://github.com/simeononsecurity/eye-spy/releases" target="_blank">🏷 Releases</a>
+      <a href="https://github.com/simeononsecurity/eye-spy/issues" target="_blank">🐛 Issues</a>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════ DASHBOARD PANE ═══════════════════════════ -->
+<div id="pane-dash">
+  <div class="dash-sidebar">
+    <!-- Score -->
+    <div class="score-box">
+      <div class="score-num" id="d-score">0</div>
+      <div><span class="score-badge b-CLEAR" id="d-badge">CLEAR</span></div>
+      <div class="phase-row">
+        <div class="phase-chip" id="ph-BLE">BLE</div>
+        <div class="phase-chip" id="ph-WIFI">WIFI</div>
+        <div class="phase-chip" id="ph-PROMISC">PROMISC</div>
+      </div>
+    </div>
+    <!-- Connection -->
+    <div class="d-panel">
+      <h3>Connection</h3>
+      <div style="font-size:.74rem;margin-bottom:6px"><span class="dot dot-off" id="d-dot"></span><span id="d-status">Not connected</span></div>
+      <div class="conn-row">
+        <button class="d-btn d-btn-p" style="flex:1" onclick="dashConnect()">Connect Serial</button>
+        <button class="d-btn d-btn-d" onclick="dashDisconnect()">✕</button>
+      </div>
+      <div style="margin-top:8px;font-size:.72rem;color:var(--muted)">
+        <span class="dot dot-off" id="gps-dot"></span><span id="gps-status">GPS: Browser geolocation</span>
+        <button class="d-btn-sm" style="background:var(--green);margin-top:4px;width:100%" onclick="enableGPS()">Enable GPS</button>
+      </div>
+    </div>
+    <!-- Stats -->
+    <div class="d-panel">
+      <h3>Stats</h3>
+      <div class="stat-box">
+        <div class="stat-item"><div class="stat-v" id="s-tracked">0</div><div class="stat-k">Tracked</div></div>
+        <div class="stat-item"><div class="stat-v" id="s-total">0</div><div class="stat-k">Events</div></div>
+        <div class="stat-item"><div class="stat-v" id="s-ble">0</div><div class="stat-k">BLE</div></div>
+        <div class="stat-item"><div class="stat-v" id="s-wifi">0</div><div class="stat-k">WiFi</div></div>
+      </div>
+    </div>
+    <div class="d-panel" style="padding-bottom:6px"><h3>Detection Feed</h3></div>
+    <div class="det-feed" id="d-feed"></div>
+  </div>
+  <div class="dash-main">
+    <div class="dash-top">
+      <div class="map-wrap">
+        <div id="dash-map"></div>
+        <div class="map-btns">
+          <button class="d-btn-sm" style="background:var(--muted)" onclick="centerDashMap()">📍</button>
+          <button class="d-btn-sm" style="background:var(--muted)" onclick="clearDashMap()">🗑</button>
+        </div>
+      </div>
+      <div class="term-wrap">
+        <div class="term-hdr"><span>Serial Output</span><button class="d-btn-sm" style="background:var(--border);color:var(--text)" onclick="document.getElementById('dash-term').innerHTML=''">Clear</button></div>
+        <div id="dash-term"></div>
+      </div>
+    </div>
+    <div class="dash-bottom">
+      <div class="tbl-hdr">
+        <span>Detection Log — <span id="d-cnt">0</span> records</span>
+        <div class="exp-row">
+          <button class="d-btn-sm" style="background:var(--green)" onclick="exportDash('json')">JSON</button>
+          <button class="d-btn-sm" style="background:var(--yellow);color:#000" onclick="exportDash('csv')">CSV</button>
+          <button class="d-btn-sm" style="background:var(--accent);color:#000" onclick="exportDash('kml')">KML</button>
+          <button class="d-btn-sm" style="background:var(--red)" onclick="clearDashAll()">Clear All</button>
+        </div>
+      </div>
+      <div class="tbl-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Time</th><th>Type</th><th>Method</th><th>MAC / OUI</th><th>SSID</th><th>RSSI</th><th>Score</th><th>Level</th><th>GPS</th></tr></thead>
+          <tbody id="d-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ──
+function switchTab(t){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['flash','dash'][i]===t));
+  document.getElementById('pane-flash').classList.toggle('active', t==='flash');
+  document.getElementById('pane-dash').classList.toggle('active', t==='dash');
+  if(t==='dash'&&!dashMap)initDashMap();
+}
+document.getElementById('pane-flash').classList.add('active');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Device configuration (ADR-0001, docs/adr/0001-config-partition-and-flasher-configurator.md)
+//
+// The firmware reads a 64-byte blob from its `escfg` partition. Those bytes are
+// built here and handed to ESP Web Tools as an extra manifest "part" — which is
+// how a config reaches the device with no server, no rebuild and no per-user
+// firmware.
+//
+// THE LAYOUT IS A CROSS-LANGUAGE CONTRACT and must match src/es_config.h byte for
+// byte: magic, offsets, the standard IEEE CRC-32, and the ENGINE BIT NUMBERING.
+// The bit numbers are part of the wire format — renumbering one would silently
+// change what an already-saved configuration means, so new engines are appended.
+// Verified on the host by test/test_config/, which asserts the same offsets and
+// the same CRC check value (0xCBF43926 for "123456789").
+//
+// Deliberately absent: any free-form score weighting. Sensitivity is a bounded
+// choice of minimum score, clamped in the firmware to >= SCORE_ALERT, so a user
+// can make the device quieter but never lift a +5 signal into alerting alone.
+// ─────────────────────────────────────────────────────────────────────────────
+const CFG = {
+  magic:   0x46435345,   // 'ESCF' in file order — must match ESCFG_MAGIC
+  version: 1,
+  total:   64,
+  crcOff:  60,
+  offset:  0x3FF000,     // must match the `escfg` partition in partitions_4mb.csv
+  flags: { LED:1<<0, CHIRP:1<<1, VIBRATE:1<<2 },
+  // Bit 3 is RESERVED (a display-hold toggle the firmware does not implement yet)
+  // and is deliberately not listed, so it can never be sent as an enabled output.
+  // Kept out of the UI for the same reason — see src/es_config.h.
+  minScore: 6,           // must match ESCFG_DEFAULT_MIN_SCORE (SCORE_ALERT)
+  rssiFloor: -100,       // must match ESCFG_DEFAULT_RSSI_FLOOR
+  trackerMin: 30,        // must match ESCFG_DEFAULT_TRACKER_MIN
+};
+
+// Detection engines, grouped the way a user thinks about them. Bit indices MUST
+// match the ES_ENG_* enum in src/es_config.h.
+const ENGINE_GROUPS = [
+  { key:'bodycam',  label:'Body cameras', bits:[0],
+    desc:'Cameras worn by people, e.g. Axon.' },
+  { key:'glasses',  label:'Camera glasses', bits:[1],
+    desc:'RayBan-Meta style recording eyewear.' },
+  { key:'hiddencam',label:'Hidden / generic cameras', bits:[21,22],
+    desc:'Wireless cameras from common camera vendors, including by network name.' },
+  { key:'alpr',     label:'Licence-plate readers (ALPR)', bits:[18,20,23],
+    desc:'Plate readers from other vendors, plus unprovisioned Flock hardware still on its factory address.' },
+  { key:'flockwifi',label:'Flock cameras (Wi-Fi)', bits:[15,19],
+    desc:'Network hardware registered to or confirmed as Flock Safety, or a network named like one.' },
+  { key:'mfr',      label:'Shared-manufacturer Wi-Fi gear', bits:[16],
+    desc:'Built by a Flock contractor, but the same parts ship in unrelated devices — recorded quietly, never alerts alone.' },
+  { key:'gunshot',  label:'Gunshot-detection sensors', bits:[17],
+    desc:'SoundThinking / ShotSpotter acoustic sensors, often installed alongside cameras.' },
+  { key:'flockble', label:'Flock batteries & accessories (Bluetooth)', bits:[2,3,5],
+    desc:'Penguin battery packs, "FS Ext Battery", and Flock accessory services.' },
+  { key:'raven',    label:'Raven cameras (Bluetooth)', bits:[4],
+    desc:'Named Raven services — the ones that expose GPS without authentication.' },
+  { key:'trackers', label:'Trackers (AirTag / SmartTag / Tile)', bits:[7,10,11],
+    desc:'Only alerts after the device has followed you for the configured time, never on a single sighting.' },
+  { key:'drones',   label:'Drones', bits:[8,9],
+    desc:'Broadcasting aircraft/operator IDs, over Bluetooth or Wi-Fi.' },
+  { key:'skimmer',  label:'Card skimmers', bits:[6],
+    desc:'Bluetooth modules commonly found in payment-terminal skimmers.' },
+  { key:'misc',     label:'Mesh nodes, beacons & mystery devices', bits:[12,13,14],
+    desc:'MeshCore nodes, retail/venue beacons, and unknown devices that keep reappearing.' },
+];
+
+// What each board can physically do. Only the toggles a board can honour are
+// shown — offering "sound" where there is no speaker would promise something the
+// hardware cannot do, which is how the "Eye Spy is silent" documentation bug
+// happened. MUST be kept in step with the board blocks in src/main.cpp.
+const BOARD_CAPS = {
+  'esp32dev':           { sound:false, led:true,  vibrate:false },
+  'atom-lite':          { sound:false, led:true,  vibrate:false },
+  'atom-echo':          { sound:true,  led:false, vibrate:false },
+  'atom-voice':         { sound:true,  led:true,  vibrate:false },
+  'm5stack-basic':      { sound:true,  led:false, vibrate:false },
+  'm5stack-core2-aws':  { sound:true,  led:false, vibrate:true  },
+  'm5stickc-plus-se':   { sound:true,  led:false, vibrate:false },
+  'lilygo-t-dongle-c5': { sound:false, led:true,  vibrate:false },
+};
+
+let selectedManifest = 'manifest-esp32dev.json';
+let cfgObjectUrl = null;   // patched-manifest URL; revoked before each rebuild
+let cfgPartUrl   = null;   // config-blob URL; same — see applyManifest()
+
+// CRC-32 (IEEE 802.3, reflected) — the same bitwise algorithm as esCfgCrc32()
+// rather than a table, so the two are comparable by eye.
+function cfgCrc32(bytes){
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let b = 0; b < 8; b++) {
+      crc = (crc & 1) ? ((crc >>> 1) ^ 0xEDB88320) : (crc >>> 1);
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function cfgEncode(c){
+  const b = new Uint8Array(CFG.total);
+  const dv = new DataView(b.buffer);
+  dv.setUint32(0, CFG.magic, true);
+  b[4] = CFG.version;
+  dv.setUint16(6, c.flags, true);
+  dv.setUint32(8, c.engines >>> 0, true);
+  b[12] = c.minScore;
+  dv.setInt8(13, c.rssiFloor);
+  b[14] = c.trackerMin;
+  dv.setUint32(CFG.crcOff, cfgCrc32(b.subarray(0, CFG.crcOff)), true);  // 15..59 stay zero
+  return b;
+}
+
+// An erased blob means "no user configuration" = the firmware's defaults. Written
+// whenever the user has NOT customised, so a flash always leaves the device in the
+// state this page showed — otherwise a previously-flashed custom config would
+// silently survive and the page would be lying about what the device will do.
+function cfgErased(){ return new Uint8Array(CFG.total).fill(0xFF); }
+
+function boardIdFromManifest(m){
+  // Manifests are named after the BUILD (e.g. manifest-m5stack-core2-aws-ble.json)
+  // but capabilities belong to the BOARD. Without stripping the variant suffixes,
+  // every "-ble" build — the default for most boards — misses BOARD_CAPS entirely
+  // and the page wrongly reports "this board has no light, sound or vibration
+  // output", with no output toggles offered at all.
+  let env = (m || '').replace(/^manifest-/, '').replace(/\.json$/, '');
+  for (let i = 0; i < 3; i++) env = env.replace(/-(ble|selftest|beacon)$/, '');
+  return env;
+}
+
+// Current UI state → config struct. Defaults are the firmware's own defaults, so
+// ticking "customise" and changing nothing still means standard behaviour.
+function cfgFromUi(){
+  const engines = ENGINE_GROUPS.reduce((m,g)=>{
+    const el = document.getElementById('cfg-eng-'+g.key);
+    return (el && el.checked) ? (m | g.bits.reduce((x,b)=>x|(1<<b),0)) : m;
+  }, 0);
+  // A toggle that is not present means the board lacks that hardware, so the bit
+  // stays off (harmless either way, but "off" is the honest value).
+  const on = (id)=>{ const el = document.getElementById('cfg-out-'+id); return el ? el.checked : false; };
+  let flags = 0;
+  if (on('chirp')) flags |= CFG.flags.CHIRP;
+  if (on('led'))   flags |= CFG.flags.LED;
+  if (on('vib'))   flags |= CFG.flags.VIBRATE;
+  const ms = document.getElementById('cfg-minscore');
+  const rf = document.getElementById('cfg-rssi');
+  const tk = document.getElementById('cfg-tracker');
+  return {
+    engines,
+    flags,
+    minScore:  ms ? parseInt(ms.value, 10) : CFG.minScore,
+    rssiFloor: rf ? parseInt(rf.value, 10) : CFG.rssiFloor,
+    trackerMin: tk ? parseInt(tk.value, 10) : CFG.trackerMin,
+  };
+}
+
+// ── Firmware selector ──
+function selectFW(el,m){
+  document.querySelectorAll('.board-btn').forEach(b=>b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedManifest = m;
+  // Reveal the configuration step and the flash step together. Configuration is
+  // optional and pre-filled with the firmware's defaults, so a user who does not
+  // care can go straight to Install.
+  document.getElementById('step2').classList.remove('active-step');
+  document.getElementById('step3').classList.add('active-step');
+  document.getElementById('step4').classList.add('active-step');
+  document.getElementById('sn2').classList.add('done');
+  renderConfig();
+  applyManifest();
+}
+
+// Build (or rebuild) the config UI for the selected board.
+//
+// NOTE on listeners: this runs on every board change, and the containers it fills
+// are REUSED (innerHTML is replaced, not the elements), so attaching a 'change'
+// listener here would stack one per render and fire that many manifest rebuilds.
+// The wiring is done once at load instead — see wireConfigEvents().
+function renderConfig(){
+  const env  = boardIdFromManifest(selectedManifest);
+  const caps = BOARD_CAPS[env] || { sound:false, led:false, vibrate:false };
+
+  document.getElementById('cfg-engines').innerHTML = ENGINE_GROUPS.map(g=>
+    `<label class="cfg-item" title="${g.desc}">`+
+    `<input type="checkbox" id="cfg-eng-${g.key}" checked>`+
+    `<span><b>${g.label}</b><br><span class="cfg-sub">${g.desc}</span></span>`+
+    `</label>`).join('');
+
+  // Outputs: only what this board can actually do.
+  const outs = [];
+  if (caps.sound)   outs.push(['chirp','Sound (beeps)', 'Two rising beeps for an alert, one lower beep for a warning.']);
+  if (caps.led)     outs.push(['led',  'Light alerts',  'Flash the status light / screen on an alert.']);
+  if (caps.vibrate) outs.push(['vib',  'Vibration',     'Buzz on an alert.']);
+  document.getElementById('cfg-outputs').innerHTML = outs.length
+    ? outs.map(([id,label,desc])=>
+        `<label class="cfg-item"><input type="checkbox" id="cfg-out-${id}" checked>`+
+        `<span><b>${label}</b><br><span class="cfg-sub">${desc}</span></span></label>`).join('')
+    : '<div class="cfg-sub">This board has no light, sound or vibration output — it only reports to the dashboard.</div>';
+
+  document.getElementById('cfg-minscore').innerHTML = [
+    [6,  'Default — alert on likely matches (recommended)'],
+    [8,  'Strong matches only'],
+    [10, 'Near-certain only — quietest'],
+  ].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  document.getElementById('cfg-rssi').innerHTML = [
+    [-100, 'Nothing (maximum range)'],
+    [-95,  'Very weak signals'],
+    [-90,  'Weak signals'],
+    [-80,  'Only nearby devices'],
+  ].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  document.getElementById('cfg-tracker').innerHTML = [
+    [15, '15 minutes'],
+    [30, '30 minutes (recommended)'],
+    [60, '1 hour'],
+  ].map(([v,l])=>`<option value="${v}"${v===30?' selected':''}>${l}</option>`).join('');
+
+  document.getElementById('cfg-body').style.display =
+    document.getElementById('cfg-custom').checked ? 'block' : 'none';
+  updateEngineSummary();
+  applyManifest();
+}
+// Live "N of M groups enabled" note — the only thing that tells a user at a
+// glance that they have quietly switched most of the device off.
+function updateEngineSummary(){
+  const note = document.getElementById('cfg-engines-note');
+  if (!note) return;
+  if (!document.getElementById('cfg-custom').checked) {
+    note.textContent = 'All detections enabled (standard behaviour).';
+    return;
+  }
+  let on = 0;
+  ENGINE_GROUPS.forEach(g=>{
+    const el = document.getElementById('cfg-eng-' + g.key);
+    if (el && el.checked) on++;
+  });
+  note.textContent = on + ' of ' + ENGINE_GROUPS.length + ' detection groups enabled.'
+    + (on === 0 ? ' This device will detect nothing at all.' : '');
+}
+
+// Wire the config controls ONCE, delegating from #step3 (whose element is never
+// replaced), so re-rendering cannot stack duplicate listeners.
+function wireConfigEvents(){
+  const step3 = document.getElementById('step3');
+  if (!step3) return;
+  step3.addEventListener('change', (e)=>{
+    if (!e.target || !e.target.id || e.target.id.indexOf('cfg-') !== 0) return;
+    if (e.target.id === 'cfg-custom') {
+      document.getElementById('cfg-body').style.display = e.target.checked ? 'block' : 'none';
+    }
+    updateEngineSummary();
+    applyManifest();
+  });
+}
+wireConfigEvents();
+
+// Patch the config part into the manifest and point the install button at it.
+async function applyManifest(){
+  const custom = document.getElementById('cfg-custom').checked;
+  const bytes  = custom ? cfgEncode(cfgFromUi()) : cfgErased();
+
+  try{
+    const base = await (await fetch(selectedManifest)).json();
+    const manifest = Object.assign({}, base);
+    // Revoke the PREVIOUS pair: applyManifest runs on every control change, and
+    // each call would otherwise leak two blob URLs for the page's lifetime.
+    if (cfgPartUrl)   URL.revokeObjectURL(cfgPartUrl);
+    if (cfgObjectUrl) URL.revokeObjectURL(cfgObjectUrl);
+    cfgPartUrl = URL.createObjectURL(new Blob([bytes], {type:'application/octet-stream'}));
+    manifest.parts = (base.parts || []).concat([{ path: cfgPartUrl, offset: CFG.offset }]);
+    cfgObjectUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], {type:'application/json'}));
+    document.getElementById('install-btn').setAttribute('manifest', cfgObjectUrl);
+    const note = document.getElementById('cfg-parts-note');
+    if (note) note.textContent = custom
+      ? 'Your settings will be written to the device along with the firmware.'
+      : 'Standard behaviour: no custom settings will be written.';
+  }catch(err){
+    // Never leave the button unusable because the manifest could not be patched —
+    // fall back to the plain, unconfigured firmware.
+    console.error('config manifest patch failed:', err);
+    document.getElementById('install-btn').setAttribute('manifest', selectedManifest);
+  }
+}
+
+
+
+// ── Open Serial Monitor ──
+// USB CDC devices (e.g. ESP32-S3 native USB) briefly re-enumerate when DTR is
+// asserted on open, causing the first open attempt to fail.  Retry once after
+// a short wait to let the device finish re-enumeration.
+async function tryOpenPort(port,opts={baudRate:115200}){
+  try{ await port.open(opts); }
+  catch(e){
+    if(e.name==='InvalidStateError'||e.name==='NetworkError'||
+       (e.message&&e.message.includes('Failed to open'))){
+      await new Promise(r=>setTimeout(r,1500));
+      await port.open(opts);
+    } else { throw e; }
+  }
+}
+async function openSerial(){
+  if(!('serial' in navigator)){alert('Web Serial requires Chrome or Edge on desktop.');return;}
+  if(dashPort||dashRunning) await dashDisconnect();
+  try{
+    const port=await navigator.serial.requestPort();
+    await tryOpenPort(port);
+    const dec=new TextDecoderStream();
+    port.readable.pipeTo(dec.writable);
+    const reader=dec.readable.getReader();
+    switchTab('dash');
+    dashPort=port; dashReader=reader;
+    document.getElementById('d-dot').className='dot dot-on';
+    document.getElementById('d-status').textContent='Connected';
+    dashRunning=true;
+    _readLoop();
+  }catch(e){if(e.name!=='NotFoundError')alert('Serial error: '+e.message);}
+}
+
+// ── Dashboard state ──
+let dashPort=null, dashReader=null, dashRunning=false;
+let dashDets=[], dashDid=0, dashMap=null, dashMarkers=[], gpsPos=null, gpsMarker=null;
+let cntBLE=0, cntWifi=0, gScore=0, gStatus='CLEAR', gPhase='?', gTracked=0;
+
+const RE_SCORE  = /\[eyespy\] \+(\d+) \(([^)]+)\)\s+score=(\d+)/;
+const RE_STATUS = /\[eyespy\] status\s+score=(\d+)\s+(\w+)\s+phase=(\w+)\s+tracked=(\d+)/;
+const RE_DECAY  = /\[eyespy\] decay\s+score=(\d+)/;
+const RE_BLE    = /\[eyespy\] (.+?)\s{2,}RSSI=(-?\d+)(?:\s+#(\d+))?/;
+const RE_WIFI   = /\[eyespy\] (.+?) OUI ([0-9a-fA-F:]{8})\s+"([^"]*)"/;
+const RE_WIFI2  = /\[eyespy\] (.+?) OUI ([0-9a-fA-F:]{8})/;
+
+(function(){try{const s=localStorage.getItem('es_dets');if(s){dashDets=JSON.parse(s);dashDets.forEach(d=>{addDRow(d);addDFeed(d);});updateSidebar();}}catch(e){}})();
+
+function initDashMap(){
+  dashMap=L.map('dash-map').setView([39.5,-98.35],4);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/">CARTO</a>'}).addTo(dashMap);
+  dashDets.forEach(d=>{if(d.gps)addDMapMarker(d);});
+}
+
+async function dashConnect(){
+  if(!('serial' in navigator))return alert('Web Serial requires Chrome/Edge desktop.');
+  if(dashPort||dashRunning) await dashDisconnect();
+  try{
+    dashPort=await navigator.serial.requestPort();
+    await tryOpenPort(dashPort);
+    document.getElementById('d-dot').className='dot dot-on';
+    document.getElementById('d-status').textContent='Connected';
+    dashRunning=true;
+    const dec=new TextDecoderStream();
+    dashPort.readable.pipeTo(dec.writable);
+    dashReader=dec.readable.getReader();
+    _readLoop();
+  }catch(e){if(e.name!=='NotFoundError')alert('Port error: '+e.message);}
+}
+
+async function _readLoop(){
+  let buf='';
+  try{
+    while(dashRunning){
+      const{value,done}=await dashReader.read();if(done)break;
+      buf+=value;
+      let nl;while((nl=buf.indexOf('\n'))!==-1){processLine(buf.slice(0,nl).trim());buf=buf.slice(nl+1);}
+    }
+  }catch(e){if(dashRunning)console.error(e);}
+  dashDisconnect();
+}
+
+async function dashDisconnect(){
+  dashRunning=false;
+  try{if(dashReader){await dashReader.cancel();dashReader=null;}if(dashPort){await dashPort.close();dashPort=null;}}catch(e){}
+  document.getElementById('d-dot').className='dot dot-off';
+  document.getElementById('d-status').textContent='Disconnected';
+}
+
+function processLine(line){
+  if(!line)return;
+  appendTerm(line);
+  let m;
+  m=RE_STATUS.exec(line);
+  if(m){gScore=+m[1];gStatus=m[2];gPhase=m[3];gTracked=+m[4];updateScore();return;}
+  m=RE_DECAY.exec(line);
+  if(m){gScore=+m[1];updateScore();return;}
+  m=RE_SCORE.exec(line);
+  if(m){const pts=+m[1],method=m[2];gScore=+m[3];gStatus=gScore>=6?'ALERT':gScore>=3?'CAUTION':'CLEAR';updateScore();addEvent({type:'score',method,pts,score:gScore});return;}
+  m=RE_WIFI.exec(line);
+  if(m){addEvent({type:'wifi',method:m[1],oui:m[2],ssid:m[3],rssi:null});return;}
+  m=RE_WIFI2.exec(line);
+  if(m){addEvent({type:'wifi',method:m[1],oui:m[2],ssid:'',rssi:null});return;}
+  m=RE_BLE.exec(line);
+  if(m){addEvent({type:'ble',method:m[1],rssi:+m[2],count:m[3]?+m[3]:null});return;}
+}
+
+function updateScore(){
+  const el=document.getElementById('d-score');el.textContent=gScore;
+  const colors={CLEAR:'var(--green)',CAUTION:'var(--yellow)',ALERT:'var(--red)'};
+  el.style.color=colors[gStatus]||'var(--text)';
+  const badge=document.getElementById('d-badge');badge.textContent=gStatus;badge.className='score-badge b-'+gStatus;
+  ['BLE','WIFI','PROMISC'].forEach(p=>document.getElementById('ph-'+p).classList.remove('active'));
+  if(gPhase&&document.getElementById('ph-'+gPhase))document.getElementById('ph-'+gPhase).classList.add('active');
+  document.getElementById('s-tracked').textContent=gTracked;
+}
+
+function addEvent(ev){
+  const det={id:++dashDid,ts:new Date().toLocaleTimeString(),
+    type:ev.type,method:ev.method||'?',mac:ev.mac||null,oui:ev.oui||null,
+    ssid:ev.ssid||null,rssi:ev.rssi!=null?ev.rssi:null,
+    count:ev.count!=null?ev.count:null,
+    score:gScore,level:gStatus,gps:gpsPos?{lat:gpsPos[0],lon:gpsPos[1]}:null};
+  if(ev.type==='ble')cntBLE++;else if(ev.type==='wifi')cntWifi++;
+  dashDets.push(det);if(dashDets.length>2000)dashDets.shift();
+  addDRow(det);addDFeed(det);updateSidebar();
+  if(det.gps)addDMapMarker(det);
+  try{localStorage.setItem('es_dets',JSON.stringify(dashDets.slice(-500)));}catch(e){}
+}
+
+function updateSidebar(){
+  document.getElementById('s-total').textContent=dashDets.length;
+  document.getElementById('s-ble').textContent=cntBLE;
+  document.getElementById('s-wifi').textContent=cntWifi;
+}
+
+function addDRow(det){
+  const tb=document.getElementById('d-table');const tr=document.createElement('tr');
+  const lvlC={CLEAR:'var(--green)',CAUTION:'var(--yellow)',ALERT:'var(--red)'};
+  const typeC={ble:'t-ble',wifi:'t-wifi',score:'t-score'}[det.type]||'t-score';
+  tr.innerHTML=`<td>${det.id}</td><td>${det.ts}</td>
+    <td><span class="det-badge ${typeC}">${det.type.toUpperCase()}</span></td>
+    <td>${det.method}${det.count>1?` <small style="color:var(--muted)">#${det.count}</small>`:''}</td>
+    <td style="font-family:monospace;font-size:.7rem">${det.oui||det.mac||'—'}</td>
+    <td>${det.ssid||'—'}</td>
+    <td>${det.rssi!=null?det.rssi+'dBm':'—'}</td>
+    <td>${det.score||0}</td>
+    <td style="color:${lvlC[det.level]||'var(--text)'};font-weight:600">${det.level||'?'}</td>
+    <td>${det.gps?'📍':'—'}</td>`;
+  tb.insertBefore(tr,tb.firstChild);
+  document.getElementById('d-cnt').textContent=tb.rows.length;
+}
+
+function addDFeed(det){
+  const feed=document.getElementById('d-feed');const div=document.createElement('div');
+  div.className='det-item';
+  const typeC={ble:'t-ble',wifi:'t-wifi',score:'t-score'}[det.type]||'t-score';
+  const lvlC={CLEAR:'var(--green)',CAUTION:'var(--yellow)',ALERT:'var(--red)'};
+  const gStr=det.gps?' has-gps':'';
+  div.innerHTML=`<div class="d-row1"><span class="det-method${gStr}">${det.method}</span><span class="det-badge ${typeC}">${det.type.toUpperCase()}</span></div>
+    <div class="det-meta">Score: <b style="color:${lvlC[det.level]||'var(--text)'}">${det.score||0}</b>${det.rssi!=null?' · '+det.rssi+'dBm':''}${det.oui?' · '+det.oui:''}${det.count>1?' · seen #'+det.count:''}</div>`;
+  feed.insertBefore(div,feed.firstChild);if(feed.children.length>80)feed.removeChild(feed.lastChild);
+}
+
+function addDMapMarker(det){
+  if(!dashMap||!det.gps)return;
+  const lvlC={CLEAR:'#3fb950',CAUTION:'#d29922',ALERT:'#f85149'};
+  const color=lvlC[det.level]||'#3fb950';
+  const m=L.circleMarker([det.gps.lat,det.gps.lon],{radius:6,color,fillColor:color,fillOpacity:.75}).addTo(dashMap)
+    .bindPopup(`<b>${det.method}</b><br>Level: ${det.level}<br>Score: ${det.score}<br>RSSI: ${det.rssi||'?'}${det.count?' · #'+det.count+' seen':''}<br>${det.ts}`);
+  dashMarkers.push(m);
+}
+
+function appendTerm(line){
+  const t=document.getElementById('dash-term');const d=document.createElement('div');
+  d.textContent=line;t.appendChild(d);t.scrollTop=t.scrollHeight;if(t.children.length>600)t.removeChild(t.firstChild);
+}
+
+function enableGPS(){
+  if(!navigator.geolocation)return alert('Geolocation not available');
+  navigator.geolocation.watchPosition(pos=>{
+    gpsPos=[pos.coords.latitude,pos.coords.longitude];
+    document.getElementById('gps-dot').className='dot dot-on';
+    document.getElementById('gps-status').textContent=`GPS: ${gpsPos[0].toFixed(4)},${gpsPos[1].toFixed(4)}`;
+    if(dashMap){
+      if(!gpsMarker)gpsMarker=L.circleMarker(gpsPos,{radius:9,color:'#58a6ff',fillColor:'#58a6ff',fillOpacity:.85}).addTo(dashMap).bindPopup('Your location');
+      else gpsMarker.setLatLng(gpsPos);
+    }
+  },err=>{alert('GPS: '+err.message);},{enableHighAccuracy:true,maximumAge:5000});
+}
+
+function centerDashMap(){if(dashMap){if(gpsPos)dashMap.setView(gpsPos,15);else if(dashMarkers.length)dashMap.fitBounds(dashMarkers.map(m=>m.getLatLng()));}}
+function clearDashMap(){dashMarkers.forEach(m=>dashMap.removeLayer(m));dashMarkers=[];}
+function clearDashAll(){
+  if(!confirm('Clear all data?'))return;
+  dashDets=[];dashDid=0;cntBLE=0;cntWifi=0;gScore=0;gStatus='CLEAR';gPhase='?';gTracked=0;
+  document.getElementById('d-table').innerHTML='';document.getElementById('d-feed').innerHTML='';
+  document.getElementById('d-cnt').textContent=0;updateScore();updateSidebar();clearDashMap();
+  localStorage.removeItem('es_dets');
+}
+function exportDash(fmt){
+  if(fmt==='json'){dl('eyespy_'+ts()+'.json',JSON.stringify(dashDets,null,2),'application/json');return;}
+  if(fmt==='csv'){
+    const h='id,ts,type,method,oui,mac,ssid,rssi,score,level,lat,lon\n';
+    const r=dashDets.map(d=>[d.id,d.ts,d.type,d.method,d.oui||'',d.mac||'','"'+(d.ssid||'')+'"',d.rssi!=null?d.rssi:'',d.score,d.level,d.gps?d.gps.lat:'',d.gps?d.gps.lon:''].join(',')).join('\n');
+    dl('eyespy_'+ts()+'.csv',h+r,'text/csv');return;
+  }
+  const pms=dashDets.filter(d=>d.gps).map(d=>`<Placemark><name>${d.method}</name><description>Level: ${d.level} | Score: ${d.score} | RSSI: ${d.rssi||'?'}</description><Point><coordinates>${d.gps.lon},${d.gps.lat},0</coordinates></Point></Placemark>`).join('');
+  dl('eyespy_'+ts()+'.kml','<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Eye Spy Detections</name>'+pms+'</Document></kml>','application/vnd.google-earth.kml+xml');
+}
+function dl(name,content,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:mime}));a.download=name;a.click();}
+function ts(){return new Date().toISOString().slice(0,19).replace(/[T:]/g,'-');}
+</script>
+</body>
+</html>
