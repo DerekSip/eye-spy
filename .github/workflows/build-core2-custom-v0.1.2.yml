@@ -1,0 +1,185 @@
+name: Eye Spy Core2 Custom v0.1.2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-core2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Get source from your fork
+        uses: actions/checkout@v4
+
+      - name: Prepare Python on GitHub runner
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Apply carefully scoped Core2 updates
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          #!/usr/bin/env python3
+          """Eye Spy Core2 custom revision 0.1.2: safe, fail-closed source edits.
+          
+          Run at the root of a fork of simeononsecurity/eye-spy.
+          A missing or nonunique upstream anchor aborts without writing anything.
+          Copyright of upstream code remains with upstream; Apache-2.0 license applies.
+          """
+          from pathlib import Path
+          
+          MAIN = Path('src/main.cpp')
+          DISPLAY = Path('src/m5basic_display.h')
+          MARKER = 'EYE_SPY_CORE2_CUSTOM_0_1'
+          
+          
+          def single(text: str, before: str, after: str, label: str) -> str:
+              count = text.count(before)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected one matching source anchor, found {count}. '
+                                     'Upstream source may have changed; no files were edited.')
+              return text.replace(before, after, 1)
+          
+          
+          def transform(main: str, display: str) -> tuple[str, str]:
+              if MARKER in main or MARKER in display:
+                  raise RuntimeError('This revision was already applied. No files changed.')
+              # Retain the Arduino String object for as long as its c_str() is used.
+              # WiFi.SSID(i).c_str() on its own may return a dangling pointer because
+              # the temporary String is destroyed at the end of the statement.
+              main = single(
+                  main,
+                  '        uint8_t*    bssid = WiFi.BSSID(i);\n'
+                  '        const char* ssid  = WiFi.SSID(i).c_str();',
+                  '        uint8_t*    bssid = WiFi.BSSID(i);\n'
+                  '        String ssidStorage = WiFi.SSID(i);  // EYE_SPY_CORE2_CUSTOM_0_1: keep allocation alive\n'
+                  '        const char* ssid = ssidStorage.c_str();',
+                  'Wi-Fi SSID lifetime',
+              )
+          
+              # Diagnostic counts do not expose any SSIDs or MAC addresses. This reports
+              # whether a successful scan saw APs and whether the configured RSSI floor
+              # hid them, separating radio trouble from pattern-matching trouble.
+              main = single(main,
+                  '    unsigned long now = millis();\n'
+                  '    bool fFlockOui=false, fFlockMfrOui=false, fSoundthinking=false,',
+                  '    unsigned long now = millis();\n'
+                  '    int strongNetworks = 0;  // radio diagnostics, not a detection count\n'
+                  '    bool fFlockOui=false, fFlockMfrOui=false, fSoundthinking=false,',
+                  'Wi-Fi diagnostics initialization')
+              main = single(main,
+                  '        if (WiFi.RSSI(i) < RSSI_MIN) continue;\n'
+                  '        uint8_t*    bssid = WiFi.BSSID(i);',
+                  '        if (WiFi.RSSI(i) < RSSI_MIN) continue;\n'
+                  '        ++strongNetworks;\n'
+                  '        uint8_t*    bssid = WiFi.BSSID(i);',
+                  'Wi-Fi diagnostics increment')
+              # The upstream WiFi scan's Serial.printf() line is a stable API
+              # parsed by the project's dashboard. Do not change it. Append a
+              # separate diagnostic line immediately before the next function.
+              main = single(main,
+                  '}\nstatic void startWifiPromisc() {',
+                  '    Serial.printf("[eyespy-custom] WiFi networks=%d above_floor=%d\\n", n, strongNetworks);\n'
+                  '}\nstatic void startWifiPromisc() {',
+                  'Wi-Fi diagnostics print')
+          
+              # Only Core2 compiles these battery additions. M5.Power calls stay on the
+              # existing UI task; do not call M5Unified from the Wi-Fi/BLE scanner task.
+              display = single(display,
+                  '    M5.Display.print(left);\n'
+                  '    if (right && right[0]) {',
+                  '    M5.Display.print(left);\n'
+                  '#if defined(USE_M5CORE2_AWS)\n'
+                  '    // EYE_SPY_CORE2_CUSTOM_0_1: read the Core2 PMIC at most every 5 seconds.\n'
+                  '    // Charging indicator is a + sign; -- means reading unavailable.\n'
+                  '    static uint32_t batteryReadMs = 0;\n'
+                  '    static int32_t batteryPercent = -1;\n'
+                  '    static bool batteryCharging = false;\n'
+                  '    uint32_t batteryNowMs = millis();\n'
+                  '    if (batteryReadMs == 0 || (uint32_t)(batteryNowMs - batteryReadMs) >= 5000) {\n'
+                  '        batteryPercent = M5.Power.getBatteryLevel();\n'
+                  '        batteryCharging = (M5.Power.isCharging() == m5::Power_Class::is_charging);\n'
+                  '        batteryReadMs = batteryNowMs ? batteryNowMs : 1;\n'
+                  '    }\n'
+                  '    static char rightWithBattery[40];  // persistent while right points here\n'
+                  '    if (batteryPercent >= 0 && batteryPercent <= 100) {\n'
+                  '        snprintf(rightWithBattery, sizeof(rightWithBattery), "%s %ld%%%s",\n'
+                  '                 right ? right : "", (long)batteryPercent, batteryCharging ? "+" : "");\n'
+                  '    } else {\n'
+                  '        snprintf(rightWithBattery, sizeof(rightWithBattery), "%s BAT:--",\n'
+                  '                 right ? right : "");\n'
+                  '    }\n'
+                  '    right = rightWithBattery;\n'
+                  '#endif\n'
+                  '    if (right && right[0]) {',
+                  'Core2 battery header')
+          
+              # Header is normally redrawn only when a new detection or scan phase occurs.
+              # Refresh the tiny header independently in the existing 250-ms stale path,
+              # at 5-second intervals; don't clear the main panel or affect critical hold.
+              display = single(display,
+                  '        mbe_drawAlertLine(mbe_lastAlertY, lastAlertMs);\n'
+                  '        mbe_drawLogStrip();   // force=false: skips unless new lines arrived\n'
+                  '        return;',
+                  '        mbe_drawAlertLine(mbe_lastAlertY, lastAlertMs);\n'
+                  '        mbe_drawLogStrip();   // force=false: skips unless new lines arrived\n'
+                  '#if defined(USE_M5CORE2_AWS)\n'
+                  '        static uint32_t batteryHeaderDrawMs = 0;\n'
+                  '        if (batteryHeaderDrawMs == 0 ||\n'
+                  '            (uint32_t)(nowMs - batteryHeaderDrawMs) >= 5000) {\n'
+                  '            char headerLeft[32];\n'
+                  '            snprintf(headerLeft, sizeof(headerLeft), "EYE SPY  SCORE:%d", score);\n'
+                  '            mbe_header(headerLeft, mbe_levelLabel(lvl), mbe_levelBg(lvl), MBE_WHITE);\n'
+                  '            batteryHeaderDrawMs = nowMs ? nowMs : 1;\n'
+                  '        }\n'
+                  '#endif\n'
+                  '        return;',
+                  'periodic battery redraw')
+          
+              return main, display
+          
+          
+          def main() -> None:
+              original_main = MAIN.read_text(encoding='utf-8')
+              original_display = DISPLAY.read_text(encoding='utf-8')
+              new_main, new_display = transform(original_main, original_display)
+              # All validation precedes both writes.
+              MAIN.write_text(new_main, encoding='utf-8')
+              DISPLAY.write_text(new_display, encoding='utf-8')
+              print('Applied Eye Spy Core2 custom revision 0.1.2 to two source files.')
+              print('Original BLE/OpenDroneID/Flock engines and flash partitions untouched.')
+          
+          
+          if __name__ == '__main__':
+              main()
+          PY
+
+      - name: Install PlatformIO on GitHub runner only
+        run: python3 -m pip install --disable-pip-version-check platformio==6.1.18
+
+      - name: Run upstream native tests
+        run: pio test -e native
+
+      - name: Compile firmware for Core2 For AWS with BLE
+        run: pio run -e m5stack-core2-aws-ble
+
+      - name: Prepare signed-by-hash artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp .pio/build/m5stack-core2-aws-ble/firmware.bin dist/firmware.bin
+          cd dist
+          sha256sum firmware.bin > SHA256SUMS.txt
+          ls -lh firmware.bin
+
+      - name: Downloadable firmware result
+        uses: actions/upload-artifact@v4
+        with:
+          name: eye-spy-core2-custom-v0-1-2
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
